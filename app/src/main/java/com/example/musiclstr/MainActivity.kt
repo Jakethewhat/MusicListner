@@ -1,25 +1,28 @@
-@file:Suppress("DEPRECATION")
-
 package com.example.musiclstr
 
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_login) // Ensure this points to the correct layout
+        setContentView(R.layout.activity_splash) // Use the new splash screen layout
 
-        // Optionally, you can implement a splash screen delay using Handler
         Handler().postDelayed({
-            // Launch SignInActivity after a delay
-            val intent = Intent(this, SignInActivity::class.java)
+            val intent = if (userIsLoggedIn()) {
+                Intent(this, HomeScreen::class.java) // Go to HomeScreen if logged in
+            } else {
+                Intent(this, SignInActivity::class.java) // Go to SignInActivity if not logged in
+            }
             startActivity(intent)
-            finish() // Finish MainActivity to prevent going back to it
-        }, 3000)
+            finish() // Close the splash screen
+        }, 3000) // 3 seconds delay
+    }
+
+    private fun userIsLoggedIn(): Boolean {
+        // Implement logic to check if the user is logged in, e.g., check a token in SharedPreferences
+        return false // Replace with actual login check
     }
 }

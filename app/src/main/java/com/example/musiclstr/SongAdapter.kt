@@ -1,84 +1,48 @@
 package com.example.musiclstr
 
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
 
-class SongsAdapter(
-    private var songs: List<Song>,
+class SongAdapter(
+    private val songs: List<Song>, // List of songs to display
+    private val itemClick: (Song) -> Unit // Lambda function for handling item clicks
+) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
-    private val onItemClick: (Song) -> Unit
-) : RecyclerView.Adapter<SongsAdapter.SongViewHolder>() {
-
-    // Method to provide access to the songs list
-    fun getSongs(): List<Song> {
-        return songs
-    }
-
-    fun shuffleSongs() {
-        songs = songs.shuffled()
-        notifyDataSetChanged()
-    }
-
-
-
+    // Create new views (invoked by the layout manager)
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.song_item, parent, false)
-        return SongViewHolder(view)
+        // Inflate the song_item layout to create the view
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.song_item, parent, false)
+        return SongViewHolder(view) // Return the new ViewHolder
     }
 
+    // Replace the contents of a view (invoked by the layout manager)
     override fun onBindViewHolder(holder: SongViewHolder, position: Int) {
-        val song = songs[position]
-        holder.bind(song)
-        holder.itemView.setOnClickListener { onItemClick(song) }
-
-        // Highlight the currently playing song
-        if (song.isPlaying) {
-            // Apply highlight styling to the currently playing song
-            holder.itemView.setBackgroundColor(ContextCompat.getColor(holder.itemView.context, R.color.shuffleOnColor))
-        } else {
-            // Reset background color for other songs
-            holder.itemView.setBackgroundColor(Color.TRANSPARENT)
-        }
+        val song = songs[position] // Get the song at the current position
+        holder.bind(song, itemClick) // Pass the song and click listener to bind
     }
 
-    override fun getItemCount(): Int = songs.size
-
-    fun submitList(newList: List<Song>) {
-        songs = newList
-        notifyDataSetChanged()
+    // Return the size of your dataset (invoked by the layout manager)
+    override fun getItemCount(): Int {
+        return songs.size // Return the number of songs
     }
 
-
-
-
+    // ViewHolder class to hold the views for each song item
     class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val titleTextView: TextView = itemView.findViewById(R.id.titleTextView)
-        private val artistTextView: TextView = itemView.findViewById(R.id.artistTextView)
-        private val albumImageView: ImageView = itemView.findViewById(R.id.albumImageView)
+        private val titleTextView: TextView = itemView.findViewById(R.id.titleTextView) // Title TextView
+        private val artistTextView: TextView = itemView.findViewById(R.id.artistTextView) // Artist TextView
 
+        // Bind song data to the views and set the click listener
+        fun bind(song: Song, itemClick: (Song) -> Unit) {
+            titleTextView.text = song.title // Set song title
+            artistTextView.text = song.artist // Set artist name
 
-        fun bind(song: Song) {
-            titleTextView.text = song.title
-            artistTextView.text = song.artist
-            titleTextView.setTextColor(Color.BLACK)
-            artistTextView.setTextColor(Color.BLACK)
-            Glide.with(itemView.context)
-                .load(song.albumArtUri)
-                .placeholder(R.drawable.audioicon) // Placeholder image
-                .error(R.drawable.audioicon) // Error image
-                .into(albumImageView)
+            // Set the click listener for the item view
+            itemView.setOnClickListener {
+                itemClick(song) // Trigger the click event with the song
+            }
         }
-
-
     }
 }
-
-

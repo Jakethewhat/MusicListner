@@ -5,7 +5,6 @@
     <string name="password">Password</string>
     <string name="textview">TextView</string>
     <string name="sign_en">Sign In</string>
-
     <string name="sign_up">Sign Up</string>
     <string name="sinh_ap">Sign Up</string>
     <string name="confirm_password">Confirm Password</string>
@@ -26,6 +25,8 @@
     <string name="previous_button">previous_button</string>
     <string name="repeat_button">repeat_button</string>
     <string name="logo_description">logo_description</string>
+    <string name="playlist_button_description">Open_Playlist</string>
+    <string name="splash_image_desc">splash</string>
 
 
 </resources>
