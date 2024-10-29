@@ -16,8 +16,8 @@
     <string name="show">SHOW</string>
     <string name="create_a_password">Create a password</string>
     <string name="all_songs">All Songs</string>
-    <string name="song_title">Song Title Here</string>
-    <string name="song_artist">Artist Name Here</string>
+    <string name="song_title">Song Title</string>
+    <string name="song_artist">Artist Name</string>
     <string name="playback_timer">00:00</string>
     <string name="shuffle_button">shuffle_button</string>
     <string name="next_button">next_button</string>
@@ -27,6 +27,6 @@
     <string name="logo_description">logo_description</string>
     <string name="playlist_button_description">Open_Playlist</string>
     <string name="splash_image_desc">splash</string>
-
+    <string name="down_button_description">Expand options</string>
 
 </resources>

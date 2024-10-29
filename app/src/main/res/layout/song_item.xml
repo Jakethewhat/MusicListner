@@ -12,7 +12,7 @@
         android:id="@+id/albumImageView"
         android:layout_width="50dp"
         android:layout_height="50dp"
-        android:src="@drawable/ic_launcher_foreground" />
+        android:src="@drawable/album" />
 
     <LinearLayout
         android:layout_width="0dp"

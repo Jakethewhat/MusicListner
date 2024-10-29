@@ -5,8 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.os.Handler
 import android.provider.MediaStore
-import android.util.Log
 import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.SearchView
@@ -17,109 +17,96 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.Locale
 
 class HomeScreen : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var songAdapter: SongAdapter
-    private val songList = mutableListOf<Song>() // List to hold songs
-    private var filteredList = mutableListOf<Song>() // List to hold filtered songs
-    private var mediaPlayer: MediaPlayer? = null // MediaPlayer instance
-
-    // Control flag
+    private val songList = mutableListOf<Song>()
+    private var filteredList = mutableListOf<Song>()
     private var currentSongIndex = -1
+    private lateinit var handler: Handler
+    private lateinit var updateSeekBarRunnable: Runnable
 
-    // Declare the pauseResumeButton at the class level
     private lateinit var pauseResumeButton: ImageButton
+    private lateinit var previousButton: ImageButton
+    private lateinit var nextButton: ImageButton
+    private lateinit var seekBar: SeekBar
+    private lateinit var positivePlaybackTimer: TextView
+    private lateinit var negativePlaybackTimer: TextView
 
     companion object {
         private const val REQUEST_CODE_READ_EXTERNAL_STORAGE = 1
+        var sharedMediaPlayer: MediaPlayer? = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize RecyclerView
+        initializeUIComponents()
+        checkStoragePermission()
+        setupSeekBarUpdate()
+    }
+
+    private fun initializeUIComponents() {
+        // Initialize RecyclerView and SongAdapter
         recyclerView = findViewById(R.id.recyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
-
-        // Initialize songAdapter
         songAdapter = SongAdapter(filteredList) { song ->
             currentSongIndex = filteredList.indexOf(song)
-            playSong(song) // Play song when clicked
-            updatePlayPauseButton() // Update play/pause button immediately
+            playSong(song)
+            updatePlayPauseButton()
         }
         recyclerView.adapter = songAdapter
 
-        // Check for read external storage permission
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-                REQUEST_CODE_READ_EXTERNAL_STORAGE)
-        } else {
-            fetchAllSongs() // Fetch songs if permission is already granted
+        // Initialize and set up control buttons
+        pauseResumeButton = findViewById(R.id.pauseResumeButton)
+        previousButton = findViewById(R.id.previousButton)
+        nextButton = findViewById(R.id.nextButton)
+        seekBar = findViewById(R.id.seekBar)
+
+        // Initialize playback timers
+        positivePlaybackTimer = findViewById(R.id.positive_playback_timer)
+        negativePlaybackTimer = findViewById(R.id.negative_playback_timer)
+
+        // Set click listeners
+        pauseResumeButton.setOnClickListener { togglePlayPause() }
+        previousButton.setOnClickListener { playPreviousSong() }
+        nextButton.setOnClickListener { playNextSong() }
+
+        // Initialize Playlist button
+        findViewById<ImageButton>(R.id.playlistButton).setOnClickListener {
+            startActivity(Intent(this, PlaylistActivity::class.java))
         }
 
-        // Initialize buttons
-        pauseResumeButton = findViewById(R.id.pauseResumeButton) // Initialize the pauseResumeButton here
-        val previousButton: ImageButton = findViewById(R.id.previousButton)
-        val nextButton: ImageButton = findViewById(R.id.nextButton)
-        val playlistButton: ImageButton = findViewById(R.id.playlistButton)
-
-        // Set up button click listeners
-        pauseResumeButton.setOnClickListener {
-            togglePlayPause(pauseResumeButton)
+        // Initialize navigation to PlayingSongFragment
+        findViewById<ImageButton>(R.id.imageButton).setOnClickListener {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragment_container, PlayingSongFragment())
+                .addToBackStack(null)
+                .commit()
         }
 
-        previousButton.setOnClickListener {
-            Log.d("ButtonClick", "Previous button clicked")
-            playPreviousSong()
-        }
-
-        nextButton.setOnClickListener {
-            Log.d("ButtonClick", "Next button clicked")
-            playNextSong()
-        }
-        playlistButton.setOnClickListener {
-            val intent = Intent(this, PlaylistActivity::class.java)
-            startActivity(intent)
-        }
-
-        mediaPlayer?.setOnCompletionListener {
-            playNextSong() // Play the next song when the current one ends
-        }
-
-        // Set up seek bar
-        val seekBar: SeekBar = findViewById(R.id.seekBar)
-        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    mediaPlayer?.seekTo(progress * 1000) // Convert seconds to milliseconds
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
-        })
-
-        // Initialize SearchView
-        val searchView: SearchView = findViewById(R.id.searchView)
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean {
-                return false
-            }
-
+        // Initialize SearchView with a query text listener
+        findViewById<SearchView>(R.id.searchView).setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?) = false
             override fun onQueryTextChange(newText: String?): Boolean {
-                filterSongs(newText) // Call the filter function on text change
+                filterSongs(newText)
                 return true
             }
         })
     }
 
-    private fun fetchAllSongs() {
-        Log.d("FetchSongs", "Fetching songs from MediaStore...")
+    private fun checkStoragePermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), REQUEST_CODE_READ_EXTERNAL_STORAGE)
+        } else {
+            fetchAllSongs()
+        }
+    }
 
+    private fun fetchAllSongs() {
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.DISPLAY_NAME,
@@ -135,163 +122,135 @@ class HomeScreen : AppCompatActivity() {
             null
         )
 
-        songList.clear() // Clear the existing song list
-
+        songList.clear()
         cursor?.use {
-            val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val nameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
-            val dataColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-            val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-
             while (it.moveToNext()) {
-                val id = it.getLong(idColumn)
-                val name = it.getString(nameColumn)
-                val data = it.getString(dataColumn)
-                val artist = it.getString(artistColumn) ?: "Unknown"
-
-                val song = Song(id = id, title = name, artist = artist, filePath = data)
+                val song = Song(
+                    id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)),
+                    title = it.getString(it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)),
+                    artist = it.getString(it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)) ?: "Unknown",
+                    filePath = it.getString(it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
+                )
                 songList.add(song)
-                Log.d("FetchSongs", "Found song: ${song.title}, path: ${song.filePath}")
             }
         }
-
-        Log.d("FetchSongs", "Total songs fetched: ${songList.size}")
-        filteredList.addAll(songList) // Populate filteredList with all songs initially
-        updateRecyclerView() // Update RecyclerView
-    }
-
-    private fun updateRecyclerView() {
-        songAdapter.notifyDataSetChanged() // Notify adapter of data change
+        filteredList.addAll(songList)
+        songAdapter.notifyDataSetChanged()
     }
 
     private fun playSong(song: Song) {
-        // If the current song is already playing, release the MediaPlayer and start the new song
-        if (mediaPlayer?.isPlaying == true) {
-            mediaPlayer?.stop() // Stop the current song
-            mediaPlayer?.release() // Release the current MediaPlayer
-        }
+        sharedMediaPlayer?.stop()
+        sharedMediaPlayer?.release()
 
-        Log.d("PlaySong", "Playing song: ${song.title} by ${song.artist}")
-
-        // Validate file path
-        if (song.filePath.isBlank()) {
-            Log.e("PlaySong", "Invalid song file path: ${song.filePath}")
-            return
-        }
-
-        try {
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(song.filePath) // Use the file path from the song
-                prepareAsync() // Prepare asynchronously
-                setOnPreparedListener {
-                    start() // Start playing the song once prepared
-                    updateUI(song) // Update UI with song info
-                    updateSeekBar() // Start updating seek bar
-                }
-                setOnCompletionListener {
-                    Log.d("MediaPlayer", "Song completed.")
-                    playNextSong() // Play the next song when the current one ends
-                }
+        sharedMediaPlayer = MediaPlayer().apply {
+            setDataSource(song.filePath)
+            prepareAsync()
+            setOnPreparedListener {
+                start()
+                updateUI(song)
+                handler.post(updateSeekBarRunnable)
             }
-        } catch (e: Exception) {
-            Log.e("MediaPlayer", "Error preparing MediaPlayer: ${e.message}")
+            setOnCompletionListener { playNextSong() }
         }
     }
 
     private fun updateUI(song: Song) {
         findViewById<TextView>(R.id.song_title).text = song.title
         findViewById<TextView>(R.id.song_artist).text = song.artist
-        updatePlayPauseButton() // Update the play/pause button when a new song is played
-    }
-
-    private fun updateSeekBar() {
-        val seekBar: SeekBar = findViewById(R.id.seekBar)
-
-        mediaPlayer?.let { player ->
-            // Set the maximum value of the seek bar to the duration of the current song
-            seekBar.max = player.duration / 1000 // Set max to duration in seconds
-
-            val handler = android.os.Handler(mainLooper)
-            val updateSeekBarRunnable = object : Runnable {
-                override fun run() {
-                    mediaPlayer?.let { mp ->
-                        try {
-                            if (mp.isPlaying) {
-                                val currentPosition = mp.currentPosition / 1000 // Current position in seconds
-                                seekBar.progress = currentPosition // Update seek bar on UI thread
-                            }else{
-
-                            }
-                        } catch (e: IllegalStateException) {
-                            Log.e("MediaPlayer", "MediaPlayer is in an invalid state: ${e.message}")
-                        }
-                    }
-                    // Schedule the next update
-                    handler.postDelayed(this, 1000) // Update every second
-                }
-            }
-
-            // Start updating the seek bar
-            handler.post(updateSeekBarRunnable)
-
-            // Stop updating the seek bar when the song ends
-            player.setOnCompletionListener {
-                handler.removeCallbacks(updateSeekBarRunnable) // Stop updates
-                seekBar.progress = 0 // Reset seek bar to the beginning
-            }
-        }
-    }
-
-    private fun playNextSong() {
-        if (filteredList.isEmpty()) return // Check if song list is empty
-
-        currentSongIndex = (currentSongIndex + 1) % filteredList.size
-
-        playSong(filteredList[currentSongIndex]) // Play the next song
-    }
-
-    private fun playPreviousSong() {
-        if (filteredList.isEmpty()) return // Check if song list is empty
-
-        currentSongIndex = (currentSongIndex - 1 + filteredList.size) % filteredList.size
-
-        playSong(filteredList[currentSongIndex]) // Play the previous song
-    }
-
-    private fun togglePlayPause(button: ImageButton) {
-        if (mediaPlayer?.isPlaying == true) {
-            mediaPlayer?.pause() // Pause the song
-            button.setImageResource(R.drawable.play) // Change button icon to play
-        } else {
-            mediaPlayer?.start() // Resume playing
-            button.setImageResource(R.drawable.playing_button) // Change button icon to pause
-        }
+        updatePlayPauseButton()
     }
 
     private fun updatePlayPauseButton() {
-        if (mediaPlayer?.isPlaying == true) {
-            pauseResumeButton.setImageResource(R.drawable.playing_button) // Change button icon to pause
+        if (sharedMediaPlayer?.isPlaying == true) {
+            pauseResumeButton.setImageResource(R.drawable.playing_button)
         } else {
-            pauseResumeButton.setImageResource(R.drawable.play) // Change button icon to play
+            pauseResumeButton.setImageResource(R.drawable.play)
+        }
+    }
+
+    fun togglePlayPause() {
+        sharedMediaPlayer?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
+                pauseResumeButton.setImageResource(R.drawable.play)
+            } else {
+                player.start()
+                pauseResumeButton.setImageResource(R.drawable.playing_button)
+            }
+        }
+    }
+
+    fun playPreviousSong() {
+        if (currentSongIndex > 0) {
+            currentSongIndex--
+            playSong(filteredList[currentSongIndex])
+        } else {
+            Toast.makeText(this, "No previous song", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun playNextSong() {
+        if (currentSongIndex < filteredList.size - 1) {
+            currentSongIndex++
+            playSong(filteredList[currentSongIndex])
+        } else {
+            Toast.makeText(this, "No next song", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun filterSongs(query: String?) {
-        filteredList.clear() // Clear the current filtered list
+        filteredList.clear()
+        filteredList.addAll(
+            if (query.isNullOrEmpty()) songList
+            else songList.filter { it.title.contains(query, ignoreCase = true) }
+        )
+        songAdapter.notifyDataSetChanged()
+    }
 
-        if (query.isNullOrEmpty()) {
-            filteredList.addAll(songList) // If query is empty, show all songs
-        } else {
-            val lowerCaseQuery = query.lowercase()
-            for (song in songList) {
-                if (song.title.lowercase().contains(lowerCaseQuery) ||
-                    song.artist.lowercase().contains(lowerCaseQuery)
-                ) {
-                    filteredList.add(song) // Add song if it matches the query
-                }
+    private fun setupSeekBarUpdate() {
+        handler = Handler(mainLooper)
+
+        updateSeekBarRunnable = Runnable {
+            sharedMediaPlayer?.let { player ->
+                seekBar.max = player.duration / 1000
+                seekBar.progress = player.currentPosition / 1000
+
+                // Update playback timers
+                val elapsedTime = player.currentPosition / 1000 // seconds
+                val remainingTime = player.duration / 1000 - elapsedTime // seconds
+
+                positivePlaybackTimer.text = String.format(Locale.getDefault(), "%02d:%02d", elapsedTime / 60, elapsedTime % 60)
+                negativePlaybackTimer.text = String.format(Locale.getDefault(), "-%02d:%02d", remainingTime / 60, remainingTime % 60)
             }
+            handler.postDelayed(updateSeekBarRunnable, 1000)
         }
 
-        updateRecyclerView() // Update RecyclerView with filtered songs
+        // Start the periodic update
+        handler.post(updateSeekBarRunnable)
+
+        // SeekBar change listener to handle manual seeking
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    // Update position based on user input while dragging
+                    sharedMediaPlayer?.seekTo(progress * 1000)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
+                handler.removeCallbacks(updateSeekBarRunnable) // Pause updates while dragging
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                sharedMediaPlayer?.seekTo(seekBar.progress * 1000) // Seek to new position
+                handler.post(updateSeekBarRunnable) // Resume updates
+            }
+        })
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacks(updateSeekBarRunnable)
+        sharedMediaPlayer?.release()
     }
 }
